@@ -6,9 +6,10 @@ import { BotActions } from './actions';
 import { executionContext, abortable } from './execution-context';
 import { initPathfinding } from './pathfinding';
 import { formatWorldStateSummary } from './formatter';
+import { tracked } from './actionLogger';
 import type { BotWorldState } from './types';
 import { readFileSync, existsSync } from 'fs';
-import { dirname, join, resolve } from 'path';
+import { dirname, basename, join, resolve } from 'path';
 
 // ============ Types ============
 
@@ -75,6 +76,12 @@ interface BotConnection {
     sdk: BotSDK;
     bot: BotActions;
     username: string;
+    /** Bot folder name (bots/{botId}/), resolved by loadEnvFromArgs() where
+     * possible - used only to tag action-log rows (db/actions.ts via
+     * sdk/actionLogger.ts). Undefined when credentials came from an already-
+     * populated process.env with no determinable folder (e.g. --env-file with
+     * no positional bot name) - action logging is simply skipped then. */
+    botId?: string;
 }
 
 const connections = new Map<string, BotConnection>();
@@ -97,15 +104,19 @@ function loadEnvFile(envPath: string): void {
 }
 
 /**
- * Load bot credentials automatically.
+ * Load bot credentials automatically, and return the resolved bot folder
+ * name (for action-log tagging) where one could be determined.
  * Priority:
- * 1. Already set in process.env (via --env-file)
- * 2. bot.env sibling to the script file
+ * 1. Already set in process.env (via --env-file) - folder name unknown
+ * 2. bot.env sibling to the script file -> folder name is that directory's name
  * 3. Command line arg: bun script.ts <botname> -> bots/<botname>/bot.env
  */
-function loadEnvFromArgs(): void {
-    // Skip if already have credentials (e.g., from --env-file)
-    if (process.env.BOT_USERNAME && process.env.PASSWORD) return;
+function loadEnvFromArgs(): string | undefined {
+    // Skip if already have credentials (e.g., from --env-file) - best effort:
+    // still check argv for a positional bot name so action logging can work.
+    if (process.env.BOT_USERNAME && process.env.PASSWORD) {
+        return process.argv.slice(2).find(arg => !arg.startsWith('-'));
+    }
 
     // Try bot.env sibling to the script file
     const scriptPath = process.argv[1];
@@ -114,7 +125,7 @@ function loadEnvFromArgs(): void {
         const siblingEnv = join(scriptDir, 'bot.env');
         if (existsSync(siblingEnv)) {
             loadEnvFile(siblingEnv);
-            return;
+            return basename(scriptDir);
         }
     }
 
@@ -122,7 +133,7 @@ function loadEnvFromArgs(): void {
     const args = process.argv.slice(2);
     const botName = args.find(arg => !arg.startsWith('-'));
 
-    if (!botName) return;
+    if (!botName) return undefined;
 
     const envPath = join(process.cwd(), 'bots', botName, 'bot.env');
     if (!existsSync(envPath)) {
@@ -130,11 +141,12 @@ function loadEnvFromArgs(): void {
     }
 
     loadEnvFile(envPath);
+    return botName;
 }
 
 async function getOrCreateConnection(): Promise<BotConnection> {
     // Try to load from command line args first
-    loadEnvFromArgs();
+    const botId = loadEnvFromArgs();
 
     // Read credentials from process.env
     const username = process.env.BOT_USERNAME;
@@ -207,7 +219,7 @@ async function getOrCreateConnection(): Promise<BotConnection> {
 
     console.error(`[Runner] Connected to bot "${username}"`);
 
-    const connection: BotConnection = { sdk, bot, username };
+    const connection: BotConnection = { sdk, bot, username, botId };
     connections.set(username, connection);
 
     return connection;
@@ -307,6 +319,7 @@ export async function runScript(
     let bot: BotActions;
     let sdk: BotSDK;
     let managedConnection = false;
+    let botId: string | undefined;
 
     if (connection) {
         bot = connection.bot;
@@ -318,6 +331,7 @@ export async function runScript(
                 const conn = await getOrCreateConnection();
                 bot = conn.bot;
                 sdk = conn.sdk;
+                botId = conn.botId;
                 managedConnection = true;
             } else {
                 // Try to load env from args first
@@ -332,6 +346,7 @@ export async function runScript(
                 }
                 bot = existing.bot;
                 sdk = existing.sdk;
+                botId = existing.botId;
                 managedConnection = true;
             }
         } catch (error: any) {
@@ -347,12 +362,6 @@ export async function runScript(
         }
     }
 
-    // Create script context
-    const ctx: ScriptContext = {
-        bot,
-        sdk,
-    };
-
     // Baseline XP so the summary can report what the script actually earned
     const xpBefore: Record<string, number> = {};
     for (const skill of sdk.getState()?.skills ?? []) {
@@ -361,6 +370,21 @@ export async function runScript(
 
     // Clean exit on signals - prevents orphaned processes when parent shell is killed
     const executionController = new AbortController();
+
+    // Create script context. When a bot folder name could be resolved,
+    // bot/sdk are wrapped so every call the script makes gets recorded to
+    // the actions table (db/actions.ts via sdk/actionLogger.ts) - the full
+    // action-level trace an agent needs to debug a misbehaving task or
+    // develop a new one. MANAGER_RUN_ID is set by manager/worker.ts when it
+    // spawns this process, so actions line up with the runs row; unset for
+    // a bare manual `bun tasks/x.ts` run.
+    const actionLogActive = new Map<symbol, string>();
+    const logCtx = botId ? { botId, runId: process.env.MANAGER_RUN_ID ?? null, source: 'task' as const } : undefined;
+    const ctx: ScriptContext = {
+        bot: tracked(bot, 'bot', actionLogActive, executionController.signal, logCtx),
+        sdk: tracked(sdk, 'sdk', actionLogActive, executionController.signal, logCtx),
+    };
+
     let signalReceived = false;
     const signalCleanup = (signal: string, exitCode: number) => {
         if (signalReceived) {

@@ -26,7 +26,6 @@ bun bots/create-bot.ts {username} --server=myserver.example.com
 This automatically creates:
 
 - `bots/{username}/bot.env` - Credentials with auto-generated password
-- `bots/{username}/lab_log.md` - Session notes template
 - `bots/{username}/script.ts` - Ready-to-run starter script
 
 ### Start a Game Client (scripts only)
@@ -133,7 +132,7 @@ Watch the output. After the script finishes (or fails), check state again:
 bun sdk/cli.ts {username}
 ```
 
-Record observations in `lab_log.md`, then improve the script.
+Record observations as a note - `bun tasks/note.ts {username} "observation text"` (a pure local DB write, no gateway connection needed) - then improve the script. `bun tasks/note.ts {username}` with no text lists recent notes.
 
 ### Chatting Without Taking Control
 
@@ -317,15 +316,24 @@ if (!result.success) {
 
 bots/
 └── {username}/
-    ├── bot.env        # Credentials (BOT_USERNAME, PASSWORD, SERVER)
-    ├── lab_log.md     # Session notes and observations
+    ├── bot.env        # Credentials (BOT_USERNAME, PASSWORD, SERVER) - the one
+    │                  #   thing still a file; everything else below is in
+    │                  #   the shared SQLite DB (data/manager.sqlite, see db/)
     └── script.ts      # Current script
+
+db/                    # Shared storage for status/events/actions/runs/bots/
+                        # fleets/notes/notifications - see db/schema.ts and
+                        # manager/README.md. tasks/lib/status.ts and
+                        # tasks/lib/bankCache.ts are thin wrappers over this.
 
 sdk/
 ├── index.ts           # BotSDK (low-level)
 ├── actions.ts         # BotActions (high-level)
+├── actionLogger.ts    # Wraps bot/sdk to record every call to db/actions.ts
 ├── cli.ts             # CLI for checking state
 └── types.ts           # Type definitions
+
+manager/               # Bot-management daemon + dashboard - see manager/README.md
 
 learnings/
 ├── banking.md

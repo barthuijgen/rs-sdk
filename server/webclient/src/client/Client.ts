@@ -4187,7 +4187,17 @@ export class Client extends GameShell {
                 await this.titleScreenDraw();
             }
 
-            this.stream = new ClientStream(await ClientStream.openSocket(window.location.host, window.location.protocol === 'https:'));
+            // Optional ?engine=host[:port] override for when the page isn't
+            // served from the same origin as the game engine (e.g. a locally
+            // served/patched client playing against the real hosted engine) -
+            // see rs-sdk tasks/README.md "Running your own gateway against
+            // the real server". Absent, behavior is unchanged: same origin
+            // as the page, same as GatewayConnection.ts's ?gateway= override.
+            const engineOverride = this.searchParams.get('engine');
+            const engineSecured = engineOverride
+                ? !(engineOverride.startsWith('localhost') || engineOverride.startsWith('127.'))
+                : window.location.protocol === 'https:';
+            this.stream = new ClientStream(await ClientStream.openSocket(engineOverride || window.location.host, engineSecured));
 
             const userhash = JString.toUserhash(username);
             const loginServer = Number(userhash >> 16n) & 0x1f;

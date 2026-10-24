@@ -1069,7 +1069,14 @@ export class BotSDK {
 
     // ============ Plumbing: Raw Actions ============
 
-    private async sendAction(action: BotAction): Promise<ActionResult> {
+    // protected, not private: the single choke point every porcelain send*()
+    // method dispatches through, so a subclass that wants to bypass the
+    // network (e.g. a same-process embedded transport talking directly to
+    // an in-process game session instead of a remote gateway) can override
+    // just this one method and have every BotActions method route through
+    // it automatically via normal prototype dispatch. No existing caller is
+    // affected - this only widens what a subclass may do.
+    protected async sendAction(action: BotAction): Promise<ActionResult> {
         if (this.connectionState === 'reconnecting') {
             console.log(`[BotSDK] Waiting for reconnection before sending action: ${action.type}`);
             await this.waitForConnection();
@@ -1939,7 +1946,13 @@ export class BotSDK {
         }
     }
 
-    private handleMessage(data: string) {
+    // protected, not private: lets a subclass feed a synthetic gateway
+    // message (e.g. a locally-collected state snapshot, serialized the same
+    // way a real gateway would) through the exact same parsing/normalization
+    // path (skill-name Proxy wrapping, item amount defaults, listener
+    // notification) without duplicating any of that logic. No existing
+    // caller is affected.
+    protected handleMessage(data: string) {
         let message: SyncToSDKMessage;
         try {
             message = JSON.parse(data);

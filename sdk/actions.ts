@@ -1138,9 +1138,19 @@ export class BotActions {
         let bestRemaining = distTo(pos);
 
         // Try to open a blocking door. Returns true if door was opened.
+        // A door that's genuinely blocking forward progress is right next to
+        // the player who just got stuck on it - not somewhere else nearby.
+        // The old default (15 tiles) grabbed whatever openable object
+        // (door/gate/fence/pen) happened to be nearest, with zero relation to
+        // the stuck position, and walked the bot there - a multi-tile detour
+        // to open something irrelevant, confirmed live (bug report
+        // 2026-10-23: a "stuck" recovery walked ~20 tiles off-route to open
+        // an unrelated gate). withDoorRetry() already uses a tight radius
+        // (5) for exactly this reason; this matches that discipline.
+        const STUCK_DOOR_RADIUS = 3;
         const tryOpenDoor = async (): Promise<boolean> => {
             if (doorRetryCount >= MAX_DOOR_RETRIES) return false;
-            if (await this.helpers.tryOpenBlockingDoor()) {
+            if (await this.helpers.tryOpenBlockingDoor(STUCK_DOOR_RADIUS)) {
                 doorRetryCount++;
                 await this.sdk.waitForTicks(1);
                 return true;
@@ -1149,7 +1159,7 @@ export class BotActions {
             // so subsequent path queries route around it
             const nearest = this.sdk.getNearbyLocs()
                 .filter(l => l.optionsWithIndex.some(o => /^open$/i.test(o.text)))
-                .filter(l => l.distance <= 15)
+                .filter(l => l.distance <= STUCK_DOOR_RADIUS)
                 .sort((a, b) => a.distance - b.distance)[0];
             if (nearest) {
                 const level = this.sdk.getState()?.player?.level ?? 0;
@@ -3836,7 +3846,7 @@ export class BotActions {
      */
     async smithAtAnvil(
         product: string | number = 'dagger',
-        options: { barPattern?: RegExp; timeout?: number } = {}
+        options: { barPattern?: RegExp; timeout?: number; anvil?: { x: number; z: number; id: number } } = {}
     ): Promise<SmithResult> {
         if (typeof product !== 'string' && typeof product !== 'number') {
             // A RegExp product used to throw deep inside on .toLowerCase().
@@ -3868,8 +3878,12 @@ export class BotActions {
             return { success: false, message: `No ${wanted} in inventory`, reason: 'no_bars' };
         }
 
-        // Find anvil
-        const anvil = this.sdk.findNearbyLoc(/anvil/i);
+        // Find anvil - prefer a caller-pinned one. Two same-named anvils
+        // sitting a couple of tiles apart (e.g. the Varrock West smithy) are
+        // both "shortest/nearest" ties; re-resolving fresh on every call let
+        // the pick flip between them tick to tick, sending the player
+        // pathing back and forth mid-batch instead of smithing in place.
+        const anvil = options.anvil ?? this.sdk.findNearbyLoc(/anvil/i);
         if (!anvil) {
             return { success: false, message: 'No anvil nearby', reason: 'no_anvil' };
         }

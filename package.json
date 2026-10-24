@@ -2,6 +2,7 @@
   "name": "server",
   "private": true,
   "scripts": {
+    "manager": "bun manager/daemon.ts",
     "check": "bun run typecheck && bun run typecheck:webclient && bun run test",
     "docs:api": "bun sdk/generate-api-docs.ts",
     "docs:api:check": "bun sdk/generate-api-docs.ts --check",

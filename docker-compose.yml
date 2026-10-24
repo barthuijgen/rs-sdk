@@ -1,0 +1,89 @@
+# Local dev stack: a real local game engine (login/rs2.cgi + webclient, with
+# its own gateway) to play/bot against, a proxy for hacking on the webclient
+# against the *remote* demo engine while reusing that same gateway, and the
+# bot-management dashboard/API - see README.md "Architecture" and
+# "Running the server locally" for what each piece does un-containerized.
+#
+# Usage:
+#   docker compose up --build
+#   Dashboard:        http://localhost:7790
+#   Local engine:     http://localhost:8888/rs2.cgi  (also serves /bot)
+#   Local-proxy page: http://localhost:8899/bot?bot=<name>&password=<pw>&engine=rs-sdk-demo.fly.dev&gateway=localhost:7780
+#
+# Standalone scripts/lite-runner/MCP still run on the HOST as usual (see
+# CLAUDE.md) - only the engine, its gateway, the webclient-proxy and the
+# manager are containerized here.
+#
+# Only one gateway exists in this stack (bundled into `engine`, see
+# server/Dockerfile's entrypoint). It's engine-agnostic - a plain WS relay
+# keyed by username - so both local-engine bots AND remote-engine bots
+# opened through `local-proxy` share it. There's no second gateway to run.
+services:
+  # The real local server: game engine + its bundled gateway (the same
+  # combined image fly.toml deploys, see server/Dockerfile). Bots created
+  # from the manager UI with "Local dev stack (localhost)" checked point at
+  # localhost:8888 (engine) / ws://localhost:7780 (gateway) - which resolve
+  # correctly from the `manager` service too, since it shares this
+  # container's network namespace below.
+  engine:
+    build:
+      context: .
+      dockerfile: server/Dockerfile
+    ports:
+      - "8888:8888" # web client, /bot, /rs2.cgi (login - creates a character on first login)
+      - "7780:7780" # gateway - shared by `local-proxy`'s ?gateway= override too
+      - "7790:7790" # manager dashboard/API - actually served by the `manager`
+      #               service below, published here because it shares this
+      #               container's network (network_mode: service:engine)
+    environment:
+      NODE_TICKRATE: "200" # faster than the 400ms default - see README "Running the server locally"
+      NODE_RANDOM_EVENTS: "false"
+      NODE_PROFANITY_FILTER: "false"
+      EASY_STARTUP: "true"
+      LOGIN_SERVER: "false" # no separate auth microservice running in this stack
+    volumes:
+      - engine-data:/opt/server/data # player saves + world db survive `compose down`
+
+  # Same image as `engine`, different entrypoint: serves the locally-built,
+  # patched webclient bundle while proxying game assets from the REAL
+  # hosted demo server (server/webclient/local-proxy.ts) - only useful when
+  # you're hacking on the SDK/client itself and want to test against
+  # rs-sdk-demo.fly.dev instead of (or in addition to) the local `engine`.
+  # Its `?gateway=` param points at the `engine` service's gateway port
+  # above, shared with local-engine bots.
+  local-proxy:
+    build:
+      context: .
+      dockerfile: server/Dockerfile
+    working_dir: /opt/server/webclient
+    entrypoint: ["bun", "local-proxy.ts"]
+    command: ["--upstream=rs-sdk-demo.fly.dev", "--port=8899"]
+    ports:
+      - "8899:8899"
+    depends_on:
+      - engine
+
+  # manager/daemon.ts: the bot-management dashboard/API and task-queue
+  # worker. Bind-mounts the whole repo (bots/, data/, task scripts) instead
+  # of baking an image, since this is the same checkout you edit on the
+  # host. network_mode: service:engine makes "localhost" inside this
+  # container mean the `engine` container - the same thing bot.env's
+  # SERVER=localhost:8888 / GATEWAY_URL=ws://localhost:7780 already assume,
+  # so bots created via the dashboard's "local" option work unmodified.
+  manager:
+    image: oven/bun:debian
+    working_dir: /app
+    volumes:
+      - ./:/app
+      - /app/node_modules
+      - /app/manager/web/node_modules
+    network_mode: "service:engine"
+    depends_on:
+      - engine
+    command: >
+      sh -c "bun install --production &&
+             cd manager/web && bun install && bun run build && cd /app &&
+             bun run manager"
+
+volumes:
+  engine-data:

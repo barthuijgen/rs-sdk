@@ -28,6 +28,16 @@ export function getBotPassword(): string | null {
     return params?.get('password') || null;
 }
 
+/** Optional `?gateway=host[:port]` override for when the page isn't served
+ * from the same origin as the gateway (e.g. a locally-run gateway fronting
+ * the real hosted engine) - rs-sdk tasks/README.md "Running your own
+ * gateway against the real server". Absent, behavior is unchanged: same
+ * origin as the page. */
+export function getGatewayOverride(): string | null {
+    const params = getUrlParams();
+    return params?.get('gateway') || null;
+}
+
 export class GatewayConnection {
     private ws: WebSocket | null = null;
     private reconnectTimer: number | null = null;
@@ -68,9 +78,15 @@ export class GatewayConnection {
     connect(): void {
         if (this.ws) return;
 
-        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-        const host = window.location.host;
-        const url = `${protocol}//${host}/gateway`;
+        const override = getGatewayOverride();
+        let url: string;
+        if (override?.startsWith('ws://') || override?.startsWith('wss://')) {
+            url = override;
+        } else {
+            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            const host = override || window.location.host;
+            url = `${protocol}//${host}/gateway`;
+        }
 
         try {
             this.ws = new WebSocket(url);

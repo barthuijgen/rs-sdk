@@ -327,12 +327,22 @@ export default class OnDemand extends OnDemandProvider {
             this.workerAcks.clear();
         };
 
+        // Same ?engine= override as Client.ts's own game socket (see that
+        // file's connect() and rs-sdk tasks/README.md "Running your own
+        // gateway against the real server") - the on-demand worker opens a
+        // second, independent connection to the same engine and was missed
+        // the first time around, leaving it stuck on "Connecting to update
+        // server" against whatever origin served the page instead.
+        const engineOverride = new URLSearchParams(window.location.search).get('engine');
+        const secured = engineOverride
+            ? !(engineOverride.startsWith('localhost') || engineOverride.startsWith('127.'))
+            : window.location.protocol === 'https:';
         worker.postMessage({
             type: 'init',
             versions: this.versions,
             crcs: this.crcs,
-            host: window.location.host,
-            secured: window.location.protocol === 'https:',
+            host: engineOverride || window.location.host,
+            secured,
             ingame: this.app.ingame,
             dbEnabled: !!this.app.db
         });

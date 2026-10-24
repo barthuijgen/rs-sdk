@@ -21,6 +21,8 @@ import { initPathfinding } from '../sdk/pathfinding.js';
 import { marketTool, readMarket } from './market-tools.js';
 import { installExecutionConsoleCapture } from './console-capture.js';
 import { executeCode, executionError, botExecutions, EXECUTE_CODE_OUTPUT_SCHEMA, type WorldOption } from './execute-code.js';
+import { taskTools, isTaskTool, handleTaskTool } from './task-tools.js';
+import { fleetTools, isFleetTool, handleFleetTool } from './fleet-tools.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -152,7 +154,9 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
           type: 'object',
           properties: {}
         }
-      }
+      },
+      ...taskTools,
+      ...fleetTools
     ]
   };
 });
@@ -203,6 +207,8 @@ server.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
       }
 
       default:
+        if (isTaskTool(name)) return successResponse(await handleTaskTool(name, args ?? {}));
+        if (isFleetTool(name)) return successResponse(await handleFleetTool(name, args ?? {}));
         throw new Error(`Unknown tool: ${name}`);
     }
   } catch (error: any) {

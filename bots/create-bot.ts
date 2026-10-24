@@ -20,34 +20,37 @@ async function replaceInFile(filePath: string, replacements: Record<string, stri
     await writeFile(filePath, content);
 }
 
-async function createBot(username?: string, serverOverride?: string, hideChat?: boolean) {
+/**
+ * Creates a new bot's `bots/{username}/` directory from the template.
+ * Throws on validation failure (bad username, already exists, ...) rather
+ * than exiting the process, so this is safe to call from a long-running
+ * caller like `manager/daemon.ts` and not just the CLI block below.
+ * Returns the (possibly auto-generated) username.
+ */
+export async function createBot(username?: string, serverOverride?: string, hideChat?: boolean): Promise<string> {
     // Generate username if not provided
     const botUsername = username || generateRandomString(9);
 
     // Validate username
     if (botUsername.length > 12) {
-        console.error('Error: Username must be 12 characters or less');
-        process.exit(1);
+        throw new Error('Username must be 12 characters or less');
     }
 
     if (!/^[a-zA-Z0-9]+$/.test(botUsername)) {
-        console.error('Error: Username must be alphanumeric');
-        process.exit(1);
+        throw new Error('Username must be alphanumeric');
     }
 
-    const templateDir = join(process.cwd(), 'bots', '_template');
-    const botDir = join(process.cwd(), 'bots', botUsername);
+    const templateDir = join(import.meta.dir, '_template');
+    const botDir = join(import.meta.dir, botUsername);
 
     // Check if template exists
     if (!existsSync(templateDir)) {
-        console.error(`Error: Template directory not found at ${templateDir}`);
-        process.exit(1);
+        throw new Error(`Template directory not found at ${templateDir}`);
     }
 
     // Check if bot already exists
     if (existsSync(botDir)) {
-        console.error(`Error: Bot directory already exists at ${botDir}`);
-        process.exit(1);
+        throw new Error(`Bot directory already exists at ${botDir}`);
     }
 
     // Copy template directory
@@ -100,26 +103,32 @@ async function createBot(username?: string, serverOverride?: string, hideChat?: 
     console.log(`  For a standalone script, first open the browser bot client using the credentials in bot.env and leave it running.`);
     console.log(`  Scripts do not start a game client. Once the browser is attached, run:`);
     console.log(`  bun bots/${botUsername}/script.ts`);
+    return botUsername;
 }
 
-// Parse command line arguments
-const args = process.argv.slice(2);
-const positional: string[] = [];
-let serverOverride: string | undefined;
-let hideChat = false;
+if (import.meta.main) {
+    // Parse command line arguments
+    const args = process.argv.slice(2);
+    const positional: string[] = [];
+    let serverOverride: string | undefined;
+    let hideChat = false;
 
-for (const arg of args) {
-    if (arg === '--local') {
-        serverOverride = 'localhost';
-    } else if (arg.startsWith('--server=')) {
-        serverOverride = arg.slice('--server='.length);
-    } else if (arg === '--no-chat' || arg === '--hide-chat') {
-        hideChat = true;
-    } else if (arg === '--show-chat') {
-        // Public chat is now on by default; accepted as a no-op for back-compat.
-    } else {
-        positional.push(arg);
+    for (const arg of args) {
+        if (arg === '--local') {
+            serverOverride = 'localhost';
+        } else if (arg.startsWith('--server=')) {
+            serverOverride = arg.slice('--server='.length);
+        } else if (arg === '--no-chat' || arg === '--hide-chat') {
+            hideChat = true;
+        } else if (arg === '--show-chat') {
+            // Public chat is now on by default; accepted as a no-op for back-compat.
+        } else {
+            positional.push(arg);
+        }
     }
-}
 
-createBot(positional[0], serverOverride, hideChat).catch(console.error);
+    createBot(positional[0], serverOverride, hideChat).catch(err => {
+        console.error(err instanceof Error ? `Error: ${err.message}` : err);
+        process.exit(1);
+    });
+}

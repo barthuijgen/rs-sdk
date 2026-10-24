@@ -922,6 +922,12 @@ const gatewayHandlers = {
                 inGame: isConnected ? (botSession?.lastState?.inGame || false) : false,
                 stateAge,
                 maxMessageLength: botSession?.maxMessageLength ?? null,
+                // clientId is 'bot-...' when the client didn't send a username (unused
+                // here since a session is only recorded under a username), and otherwise
+                // '{username}-lite-{ts}' from the headless runner (server/webclient/src/
+                // lite/runner.ts) vs '{username}-{ts}' from the in-browser GatewayConnection
+                // - the only way to tell which kind of client is attached from outside.
+                kind: isConnected ? (botSession!.clientId.includes('-lite-') ? 'lite' : 'web') : null,
                 controllers,
                 observers,
                 player: isConnected && botSession?.lastState?.player ? {

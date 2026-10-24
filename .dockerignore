@@ -1,0 +1,32 @@
+# server/Dockerfile's build context (docker-compose.yml's `engine` and
+# `local-proxy` services, context: ".") only ever COPYs server/{content,
+# engine,gateway,webclient} and sdk/ - see its COPY list. Everything else
+# below is either dead weight (node_modules, .git - ~750MB+ combined without
+# this file) or live host state that must never leave the host at all (the
+# manager's sqlite db, bot credentials in bots/*/bot.env).
+#
+# Nested node_modules matter doubly: left in, COPY server/engine (etc.) would
+# layer the host's macOS/arm64-built node_modules on top of the image's own
+# `bun install` (done earlier, for Linux) - the opposite of what that
+# dependency-layer caching is for.
+
+.git
+node_modules
+**/node_modules
+/data
+/bots
+/manager
+/mcp
+/db
+/tasks
+/wiki
+/learnings
+*.sqlite
+*.sqlite-*
+**/.DS_Store
+
+# Build artifacts regenerated inside the image anyway (server/Dockerfile runs
+# `bun run build` for both the webclient and engine itself).
+server/webclient/out
+server/engine/dist
+manager/web/dist
