@@ -3836,7 +3836,7 @@ export class BotActions {
      */
     async smithAtAnvil(
         product: string | number = 'dagger',
-        options: { barPattern?: RegExp; timeout?: number } = {}
+        options: { barPattern?: RegExp; timeout?: number; anvil?: { x: number; z: number; id: number } } = {}
     ): Promise<SmithResult> {
         if (typeof product !== 'string' && typeof product !== 'number') {
             // A RegExp product used to throw deep inside on .toLowerCase().
@@ -3868,8 +3868,9 @@ export class BotActions {
             return { success: false, message: `No ${wanted} in inventory`, reason: 'no_bars' };
         }
 
-        // Find anvil
-        const anvil = this.sdk.findNearbyLoc(/anvil/i);
+        // Find anvil - prefer a caller-pinned one. Two anvils a couple of tiles
+        // apart tie on distance, so re-resolving per call can flip between them.
+        const anvil = options.anvil ?? this.sdk.findNearbyLoc(/anvil/i);
         if (!anvil) {
             return { success: false, message: 'No anvil nearby', reason: 'no_anvil' };
         }

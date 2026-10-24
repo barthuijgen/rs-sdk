@@ -132,7 +132,7 @@
 |---|---|
 | `async fletchLogs(product?: string): Promise<FletchResult>` | Fletch logs into bows or arrow shafts using a knife. `product` is matched against the dialog's visible product labels ("15 Arrow Shafts", "Oak Short Bow", ...), so 'arrow shaft', 'shortbow' and 'oak long' all resolve. Omit it to take the first product offered. One call makes one batch — 15 shafts, or one bow. |
 | `async craftLeather(product?: string): Promise<CraftLeatherResult>` | Craft leather into armour using needle and thread. |
-| `async smithAtAnvil(product: string \| number = 'dagger', options: { barPattern?: RegExp; timeout?: number } = {}): Promise<SmithResult>` | Smith a bar into an item at an anvil. |
+| `async smithAtAnvil(product: string \| number = 'dagger', options: { barPattern?: RegExp; timeout?: number; anvil?: { x: number; z: number; id: number } } = {}): Promise<SmithResult>` | Smith a bar into an item at an anvil. |
 | `async craftJewelry(options: { barPattern?: RegExp; product?: string; gem?: string; timeout?: number; } = {}): Promise<CraftJewelryResult>` | Craft jewelry at a furnace using a gold/silver bar and optional gem. Requires: bar + mould in inventory (ring mould, necklace mould, or amulet mould). Optionally a gem for gem-set jewelry. |
 | `async enchantItem(target: InventoryItem \| string \| RegExp, level: 1 \| 2 \| 3 \| 4 \| 5, options: { timeout?: number } = {}): Promise<EnchantResult>` | Cast an enchantment spell on a jewelry item. |
 | `async stringAmulet(target: InventoryItem \| string \| RegExp = /amulet/i, options: { timeout?: number } = {}): Promise<StringAmuletResult>` | String an amulet using a ball of wool. |
