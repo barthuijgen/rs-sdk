@@ -4,7 +4,7 @@ kill_timeout = "120s"
 
 [build]
 dockerfile = "server/Dockerfile"
-ignorefile = "server/.dockerignore"
+ignorefile = "server/Dockerfile.dockerignore"
 
 [env]
 MEMORY_DIAGNOSTICS_DIR = "/opt/server/data/memory"
