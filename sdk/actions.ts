@@ -1138,9 +1138,12 @@ export class BotActions {
         let bestRemaining = distTo(pos);
 
         // Try to open a blocking door. Returns true if door was opened.
+        // A door that blocks progress is right next to the stuck player; the
+        // old 15-tile radius picked unrelated gates and walked the bot off-route.
+        const STUCK_DOOR_RADIUS = 3;
         const tryOpenDoor = async (): Promise<boolean> => {
             if (doorRetryCount >= MAX_DOOR_RETRIES) return false;
-            if (await this.helpers.tryOpenBlockingDoor()) {
+            if (await this.helpers.tryOpenBlockingDoor(STUCK_DOOR_RADIUS)) {
                 doorRetryCount++;
                 await this.sdk.waitForTicks(1);
                 return true;
@@ -1149,7 +1152,7 @@ export class BotActions {
             // so subsequent path queries route around it
             const nearest = this.sdk.getNearbyLocs()
                 .filter(l => l.optionsWithIndex.some(o => /^open$/i.test(o.text)))
-                .filter(l => l.distance <= 15)
+                .filter(l => l.distance <= STUCK_DOOR_RADIUS)
                 .sort((a, b) => a.distance - b.distance)[0];
             if (nearest) {
                 const level = this.sdk.getState()?.player?.level ?? 0;
