@@ -1069,7 +1069,8 @@ export class BotSDK {
 
     // ============ Plumbing: Raw Actions ============
 
-    private async sendAction(action: BotAction): Promise<ActionResult> {
+    // protected: the single dispatch choke point, so a subclass can swap the transport.
+    protected async sendAction(action: BotAction): Promise<ActionResult> {
         if (this.connectionState === 'reconnecting') {
             console.log(`[BotSDK] Waiting for reconnection before sending action: ${action.type}`);
             await this.waitForConnection();
@@ -1939,7 +1940,8 @@ export class BotSDK {
         }
     }
 
-    private handleMessage(data: string) {
+    // protected: lets a subclass feed state through the same parsing path.
+    protected handleMessage(data: string) {
         let message: SyncToSDKMessage;
         try {
             message = JSON.parse(data);
